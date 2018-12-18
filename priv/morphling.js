@@ -20,7 +20,7 @@ async function morphling_ws_proc(data) {
 window.morphling_ws = undefined;
 window.morphling_ws_url = undefined;
 async function morphling_ws_connect() {
-    window.morphling_ws = new WebSocket("ws://localhost:8090/ws");
+    window.morphling_ws = new WebSocket(window.morphling_ws_url);
     window.morphling_ws.onmessage = event=> morphling_ws_proc(event.data);
     const wait_onopen = () => new Promise(resolve=> window.morphling_ws.addEventListener('open', resolve, { once: true }));
     var res = await wait_onopen();
