@@ -1,4 +1,4 @@
-defmodule Morphling.Ex do
+defmodule Morphling do
     def loop(state) do
         receive do
             :kill_by_create_timeout -> Process.exit(self(), :normal)
