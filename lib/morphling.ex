@@ -43,6 +43,10 @@ defmodule Morphling do
         JSX.encode!(%{method: "morphling_dom_diff", payload: dom})
     end
 
+    def encode_rpc(rpc_method, payload) do
+        JSX.encode!(%{method: "morphling_rpc", rpc_method: rpc_method, payload: payload})
+    end
+
     def create(func, state\\%{}, timeout\\120000) do
         :erlang.spawn(fn()->
             dom = func.(state)

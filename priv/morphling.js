@@ -13,6 +13,11 @@ async function morphling_ws_proc(data) {
         case "morphling_dom_diff":
             morphdom(document.documentElement, json.payload);
             return;
+        case "morphling_rpc":
+            try {
+                window[json.rpc_method](json.payload);
+            } catch (err) {}
+            return;
     }
 }
 
