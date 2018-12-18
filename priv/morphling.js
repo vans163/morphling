@@ -8,7 +8,6 @@ async function morphling_ws_send(method, args_obj = {}) {
 }
 
 async function morphling_ws_proc(data) {
-    console.log(data);
     json = JSON.parse(data);
     switch(json.method) {
         case "morphling_dom_diff":
@@ -24,7 +23,7 @@ async function morphling_ws_connect() {
     window.morphling_ws.onmessage = event=> morphling_ws_proc(event.data);
     const wait_onopen = () => new Promise(resolve=> window.morphling_ws.addEventListener('open', resolve, { once: true }));
     var res = await wait_onopen();
-    console.log("Connected!");
+    console.log("Morphling connected!");
 }
 async function morphling_ws_process() {
     var ws = window.morphling_ws;

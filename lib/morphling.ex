@@ -3,6 +3,10 @@ defmodule Morphling do
         receive do
             :kill_by_create_timeout -> Process.exit(self(), :normal)
 
+            {:get_persistence, pid} -> 
+                send(pid, {:persistence, state.dom, state.state})
+                loop(state)
+
             {:state, pid} -> 
                 send(pid, {:morphling_state, state.state})
                 loop(state)
@@ -46,6 +50,22 @@ defmodule Morphling do
             loop(%{func: func, state: state, timer_ref: timer_ref, dom: dom})
         end)
     end
+
+    def create_persistence(dom, state\\%{}, timeout\\120000) do
+        :erlang.spawn(fn()->
+            timer_ref = :erlang.send_after(timeout, self(), :kill_by_create_timeout)
+            loop(%{dom: dom, state: state, timer_ref: timer_ref})
+        end)
+    end
+
+    def get_persistence(pid) do
+        send(pid, {:get_persistence, self()})
+        receive do
+            {:persistence, dom, state} -> {dom, state}
+        after
+            5000 -> throw(:get_morphling_persistence_timeout)
+        end
+    end 
 
     def state(pid) do
         send(pid, {:state, self()})
