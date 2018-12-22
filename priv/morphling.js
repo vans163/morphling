@@ -1,3 +1,12 @@
+window.onpopstate = function(event) {
+    morphling_ws_send("morphling_navigate", {path: location.pathname});
+};
+
+async function n(path, title = undefined, args_obj = {}) {
+    morphling_ws_send("morphling_navigate", {path: path, args: args_obj});
+    return false;
+}
+
 async function m(action, args_obj = {}) {
     morphling_ws_send("morphling_event", {action: action, args: args_obj})
 }
@@ -7,12 +16,36 @@ async function morphling_ws_send(method, args_obj = {}) {
     window.morphling_ws.send(json)
 }
 
+window.morphling_log = false;
 async function morphling_ws_proc(data) {
     json = JSON.parse(data);
     switch(json.method) {
         case "morphling_dom_diff":
-            morphdom(document.documentElement, json.payload);
+            var t0=performance.now();
+            morphdom(document.documentElement, json.payload, {
+                onNodeAdded: (node)=> {
+                    if (node.nodeType == 1) { 
+                        var att = node.getAttribute('morph-script');
+                        if (att != null) {
+                            node.innerHTML = eval(att);
+                        }
+                    }
+                },
+                onBeforeElUpdated: (oldEl, newEl) => {
+                    if (newEl.nodeType == 1) {
+                        var att = newEl.getAttribute('morph-script');
+                        if (att != null) {
+                            newEl.innerHTML = eval(att);
+                        }
+                    }
+                }
+            });
+            var t1=performance.now();
+            if (window.morphling_log == true) {
+                console.log('morph took', t1-t0);
+            }
             return;
+
         case "morphling_rpc":
             try {
                 window[json.rpc_method](json.payload);
