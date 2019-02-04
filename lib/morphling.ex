@@ -28,7 +28,7 @@ defmodule Morphling do
     end
 
     #Morphling.diff_dom("text", "text1")
-    def diff_dom(old_dom, new_dom) when old_dom == new_dom, do: []
+    def diff_dom(old_dom, new_dom) when old_dom == new_dom, do: [%{t: :eq, op: 0, p: 0, s: byte_size(new_dom)}]
     def diff_dom("", new_dom), do: [%{t: :ins, b: new_dom, p: 0, s: byte_size(new_dom)}]
     def diff_dom(_, ""), do: [%{t: :ins, b: "", p: 0, s: 0}]
     def diff_dom(old_dom, new_dom) do
@@ -163,7 +163,7 @@ defmodule Morphling do
     def delete_nested(pid, list) do
         send(pid, {:morph, [{:delete_nested, list}]})
     end
-    def delete_nested_1(state, list) do
+    def delete_nested_1(_state, _list) do
         throw(:delete_nested_1_not_implemented)
     end
 

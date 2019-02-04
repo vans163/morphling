@@ -78,13 +78,17 @@ async function morphling_ws_proc(data) {
         case "morphling_rpc":
             try {
                 window[json.rpc_method](json.payload);
-            } catch (err) {}
+            } catch (err) {
+                console.log("morphling_rpc_error", err);
+            }
             return;
 
         case "morphling_eval":
             try {
                 eval(json.payload);
-            } catch (err) {}
+            } catch (err) {
+                console.log("morphling_eval_error", err);
+            }
             return;
     }
 }
