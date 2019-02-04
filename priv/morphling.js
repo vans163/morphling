@@ -1,14 +1,25 @@
+function morphling_rpc_set_cookie(session_token) {
+    document.cookie = `session_token=${session_token}; Max-Age=${session_token.split(".")[2]};`;
+}
+function morphling_rpc_navigate(path) {
+    if (location.pathname != path) {
+        history.pushState(undefined, undefined, path);
+    }
+}
+
+
 window.onpopstate = function(event) {
-    morphling_ws_send("morphling_navigate", {path: location.pathname});
+    morphling_ws_send("morphling_event", {action: "navigate", path: location.pathname});
 };
 
-async function n(path, title = undefined, args_obj = {}) {
-    morphling_ws_send("morphling_navigate", {path: path, args: args_obj});
+async function n(path, args_obj = {}) {
+    morphling_ws_send("morphling_event", {action: "navigate", path: path, args: args_obj});
     return false;
 }
 
 async function m(action, args_obj = {}) {
-    morphling_ws_send("morphling_event", {action: action, args: args_obj})
+    morphling_ws_send("morphling_event", {action: action, args: args_obj});
+    return false;
 }
 
 async function morphling_ws_send(method, args_obj = {}) {
@@ -16,13 +27,31 @@ async function morphling_ws_send(method, args_obj = {}) {
     window.morphling_ws.send(json)
 }
 
+function morphling_apply_dom_diff(old_dom, dom_diff) {
+    var new_dom = dom_diff.reduce(function(acc, v) {
+        if (v.t == "eq") {
+            return acc + old_dom.substring(v.op, v.op+v.s);
+        } else if (v.t == "ins") {
+            return acc + v.b;
+        }
+    }, "")
+    return new_dom;
+}
+
 window.morphling_log = false;
+window.morphling_cur_dom = "";
 async function morphling_ws_proc(data) {
     json = JSON.parse(data);
     switch(json.method) {
         case "morphling_dom_diff":
             var t0=performance.now();
-            morphdom(document.documentElement, json.payload, {
+
+            old_dom = window.morphling_cur_dom;
+            dom_diff = json.payload;
+            new_dom = morphling_apply_dom_diff(old_dom, dom_diff);
+            window.morphling_cur_dom = new_dom;
+
+            morphdom(document.documentElement, new_dom, {
                 onNodeAdded: (node)=> {
                     if (node.nodeType == 1) { 
                         var att = node.getAttribute('morph-script');
@@ -49,6 +78,12 @@ async function morphling_ws_proc(data) {
         case "morphling_rpc":
             try {
                 window[json.rpc_method](json.payload);
+            } catch (err) {}
+            return;
+
+        case "morphling_eval":
+            try {
+                eval(json.payload);
             } catch (err) {}
             return;
     }
