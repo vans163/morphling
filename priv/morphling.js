@@ -12,12 +12,12 @@ window.onpopstate = function(event) {
     morphling_ws_send("morphling_event", {action: "navigate", path: location.pathname});
 };
 
-async function n(path, args_obj = {}) {
+function n(path, args_obj = {}) {
     morphling_ws_send("morphling_event", {action: "navigate", path: path, args: args_obj});
     return false;
 }
 
-async function m(action, args_obj = {}) {
+function m(action, args_obj = {}) {
     morphling_ws_send("morphling_event", {action: action, args: args_obj});
     return false;
 }
