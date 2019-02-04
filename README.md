@@ -17,11 +17,11 @@ DOM differentials and managing the server side state.
 
 ### Example Usage with Stargate Webserver
 ```elixir
-defmodule Morphling.Mixfile do
+defmodule Demo.Mixfile do
     use Mix.Project
 
     def project, do: [
-        app: :morphling,
+        app: :demo,
         version: "0.0.1",
         elixir: "~> 1.6",
         build_embedded: Mix.env == :prod,
@@ -31,16 +31,16 @@ defmodule Morphling.Mixfile do
 
     def application, do: [
         applications: [:logger],
-        mod: {Morphling, []}
     ]
 
     def deps, do: [
         {:exjsx, "~> 4.0.0"},
         {:stargate, git: "https://github.com/vans163/stargate.git"},
+        {:morphling, git: "https://github.com/vans163/morphling.git"},
     ]
 end
 
-defmodule Morphling do
+defmodule Demo do
     use Application
 
     def start(_type, _args) do
@@ -52,8 +52,8 @@ defmodule Morphling do
             ip: {0,0,0,0},
             port: 8090,
             hosts: %{
-                {:http, "*"}=> {Morphling.HTTP, %{}},
-                {:ws, "*"}=> {Morphling.WS, %{}}
+                {:http, "*"}=> {Demo.HTTP, %{}},
+                {:ws, "*"}=> {Demo.WS, %{}}
             }
         }
         {:ok, _Pid} = :stargate.warp_in(webserver)
@@ -61,37 +61,81 @@ defmodule Morphling do
         children = [
         ]
         opts = [strategy: :one_for_one,
-            name: Morphling.Supervisor,
+            name: Demo.Supervisor,
             max_seconds: 1,
             max_restarts: 999999999999]
         Supervisor.start_link(children, opts)
     end
 end
 
-defmodule Morphling.HTTP do
+defmodule Demo.HTTP do
     def http(:'GET', "/morphling.js", _, h, _, s) do
-        :stargate_plugin.serve_static("./priv/", "morphling.js", h, s)
+        path = "#{:code.priv_dir(:morphling)}/morphling.js"
+        bin = File.read!(path)
+        :stargate_plugin.serve_static_bin(bin, h, s)
     end
-    def http(:'GET', "/", _, h, _, s) do
-        IO.inspect "/"
+    def http(:'GET', path, _, h, _, s) do
+        IO.inspect path
 
-        {pid, dom} = init_morphling()
-        cookie_key = :crypto.strong_rand_bytes(64) |> Base.encode64(ignore: :whitespace, padding: false)
-        :yes = :global.register_name(cookie_key, pid)
-        h_new = %{"Set-Cookie"=> "morphling_ticket=#{cookie_key}"}
+        ms = %{path: path}
+        {dom, _} = Demo.WS.refresh_page("", ms)
+        :stargate_plugin.serve_static_bin(dom, h, s)
+    end
+end
 
-        {code, headersReply, binReply, s} = :stargate_plugin.serve_static_bin(dom, h, s)
-        {code, Map.merge(headersReply, h_new), binReply, s}
+defmodule Morphling.WS do
+    use GenServer
+
+    def start_link(params), do: :gen_server.start_link(__MODULE__, params, [])
+
+    def init({parent_pid, _query, headers, state}) do
+        IO.inspect "connect"
+
+        path = query["path"]
+
+        ms = %{path: path}
+        {dom, ms} = Demo.WS.refresh_page("", ms, parent_pid)
+
+        state = Map.merge(state, %{parent_pid: parent_pid, morph_dom: dom, morph_state: ms})
+        {:ok, state}
     end
 
-    def init_morphling(_cookie\\"") do
-        morphling_state = %{table_names: [{"Jill","Smith","50"},{"Mike","Jones","150"}]}
-        pid = Morphling.Ex.create(&Morphling.HTTP.page/1, morphling_state, 120000)
-        {dom,_} = Morphling.Ex.diff_dom(pid, "")
-        {pid, dom}
+    def refresh_page(old_dom, ms, parent_pid \\ nil) do
+        path = ms[:path]
+        ms_new = cond do
+            path != nil ->
+                default_value = Map.get(ms, :value, 0)
+                Map.merge(ms, %{value: default_value})
+            true -> ms
+        end
+
+        new_dom = Demo.Page.render(ms_new)
+
+        if parent_pid != nil do
+            diff = Morphling.diff_dom(old_dom, new_dom)
+            send(parent_pid, {:ws_send, {:text_compress, Morphling.encode_dom_diff(diff)}})
+            send(parent_pid, {:ws_send, {:text_compress, Morphling.encode_rpc_navigate(ms_new[:path])}})
+        end
+        {new_dom, ms_new}
     end
 
-    def page(s\\%{}) do
+    def handle_info({:text, bin}, s) do
+        IO.inspect bin
+        map = JSX.decode!(bin)
+
+        ms = s.morph_state
+        ms = cond do
+            map["action"] == "click_button" ->
+                Map.merge(ms, %{value: map["args"]+1})
+        end
+
+        {dom, ms} = Demo.WS.refresh_page(s.morph_dom, ms, s.parent_pid)
+        {:noreply, %{s|morph_dom: dom, morph_state: ms}}
+    end
+end
+
+defmodule Demo.Page do
+    def render(s\\%{}) do
         """
         <!DOCTYPE html>
         <html>
@@ -102,12 +146,12 @@ defmodule Morphling.HTTP do
             </head>
             <body>
                 <h1>My First Morphling</h1>
-                <input value=#{s["aa"]}></input>
+                <input value=#{s[:value]}></input>
                 #{page_table(s)}
-                <p onclick=m("click_para")>My firstt paragraph.</p>
+                <p onclick=m("click_button", s[:value])>My firstt paragraph.</p>
             </body>
             <script>
-                Morphling("ws://localhost:8090/ws");
+                Morphling(`ws://localhost:8090/?path=${location.pathname}`);
             </script>
         </html>
         """
@@ -127,51 +171,6 @@ defmodule Morphling.HTTP do
         """
     end
 end
-
-defmodule Morphling.WS do
-    use GenServer
-
-    def start_link(params), do: :gen_server.start_link(__MODULE__, params, [])
-
-    def init({parent_pid, _query, headers, state}) do
-        IO.inspect "connect"
-
-        pid = :global.whereis_name(:stargate_plugin.cookie_parse(headers["cookie"])["morphling_ticket"])
-        cond do
-            pid == :undefined ->
-                IO.inspect "recreate morphling session"
-                {pid, dom} = Morphling.HTTP.init_morphling()
-                send(parent_pid, {:ws_send, {:text_compress, Morphling.Ex.encode_dom_diff(dom)}})
-                state = Map.merge(state, %{parent_pid: parent_pid, morphling_dom: dom, morphling_pid: pid})
-                {:ok, state}
-
-            true ->
-                IO.inspect "found morphling session"
-                {dom,_} = Morphling.Ex.diff_dom(pid, "")
-                send(parent_pid, {:ws_send, {:text_compress, Morphling.Ex.encode_dom_diff(dom)}})
-                state = Map.merge(state, %{parent_pid: parent_pid, morphling_dom: dom, morphling_pid: pid})
-                {:ok, state}
-        end
-    end
-
-    def handle_info({:text, bin}, s) do
-        IO.inspect bin
-        map = JSX.decode!(bin)
-
-        morphling_state = Morphling.Ex.state(s.morphling_pid)
-        table_names = morphling_state[:table_names]
-        table_names = table_names ++ [{"morph!", "ahhhh", "spla21"}]
-        morphling_state = %{morphling_state|table_names: table_names}
-        Morphling.Ex.merge_nested(s.morphling_pid, morphling_state)
-
-        {dom,_} = Morphling.Ex.diff_dom(s.morphling_pid, "")
-
-        send(s.parent_pid, {:ws_send, {:text_compress, Morphling.Ex.encode_dom_diff(dom)}})
-
-        #send(s.parent_pid, {:ws_send, {:text_compress, "hello"}})
-        #ParentPid ! {ws_send, {bin_compress, <<"hello compressed">>}},
-        #ParentPid ! {ws_send, {text_compress, <<"a websocket text msg compressed">>}},
-        {:noreply, s}
-    end
-end
 ```
+
+Now edit the text and recompile the app, click button again, watch the dom auto hotload and mount without needing to refresh the page.
